@@ -14,6 +14,7 @@ package edge
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -31,7 +32,14 @@ type Config struct {
 	Token       string // shared secret expected from agents ("" disables auth)
 	TLSCert     string // optional cert file for the control plane (enables wss)
 	TLSKey      string // optional key file for the control plane
+
+	AdminAddr    string // optional address for the admin web UI ("" disables it)
+	AdminTLSCert string // cert for the admin UI (falls back to TLSCert)
+	AdminTLSKey  string // key for the admin UI (falls back to TLSKey)
 }
+
+// ErrNoAgent is returned when an operation needs the agent but none is connected.
+var ErrNoAgent = errors.New("no agent connected")
 
 // Server is the edge runtime.
 type Server struct {
@@ -39,10 +47,14 @@ type Server struct {
 
 	mu      sync.Mutex
 	session *yamux.Session // current agent session, or nil
+
+	sessions *adminSessions // admin UI login sessions
 }
 
 // New creates an edge Server.
-func New(cfg Config) *Server { return &Server{cfg: cfg} }
+func New(cfg Config) *Server {
+	return &Server{cfg: cfg, sessions: newAdminSessions()}
+}
 
 // setSession installs a new agent session, closing any prior one.
 func (s *Server) setSession(sess *yamux.Session) {
@@ -105,7 +117,35 @@ func (s *Server) servePublicConn(pc net.Conn) {
 		_ = pc.Close()
 		return
 	}
+	if err := tunnel.WriteStreamType(stream, tunnel.StreamProxy); err != nil {
+		_ = stream.Close()
+		_ = pc.Close()
+		return
+	}
 	tunnel.Pipe(pc, stream)
+}
+
+// RunCommand opens an exec stream to the agent and returns a reader of the
+// command's combined stdout/stderr. Closing the returned ReadCloser tells the
+// agent to terminate the command.
+func (s *Server) RunCommand(cmd string) (io.ReadCloser, error) {
+	sess := s.currentSession()
+	if sess == nil {
+		return nil, ErrNoAgent
+	}
+	stream, err := sess.Open()
+	if err != nil {
+		return nil, err
+	}
+	if err := tunnel.WriteStreamType(stream, tunnel.StreamExec); err != nil {
+		_ = stream.Close()
+		return nil, err
+	}
+	if err := tunnel.WriteExecRequest(stream, cmd); err != nil {
+		_ = stream.Close()
+		return nil, err
+	}
+	return stream, nil
 }
 
 // Run starts both listeners and blocks until ctx is cancelled or a listener
@@ -125,7 +165,17 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 
-	errCh := make(chan error, 2)
+	// Admin web UI (optional).
+	var admin *http.Server
+	if s.cfg.AdminAddr != "" {
+		if s.cfg.Token == "" {
+			_ = pub.Close()
+			return errors.New("admin UI requires --token for login")
+		}
+		admin = &http.Server{Addr: s.cfg.AdminAddr, Handler: s.adminHandler()}
+	}
+
+	errCh := make(chan error, 3)
 
 	go func() {
 		log.Printf("edge: control plane on %s/tunnel (tls=%t)", s.cfg.ControlAddr, s.cfg.TLSCert != "")
@@ -152,14 +202,47 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
+	if admin != nil {
+		go func() {
+			cert, key := s.adminTLS()
+			log.Printf("edge: admin UI on %s (tls=%t)", s.cfg.AdminAddr, cert != "")
+			var err error
+			if cert != "" && key != "" {
+				err = admin.ListenAndServeTLS(cert, key)
+			} else {
+				log.Printf("edge: WARNING admin UI is serving WITHOUT TLS; the login token will be sent in cleartext")
+				err = admin.ListenAndServe()
+			}
+			if !errors.Is(err, http.ErrServerClosed) {
+				errCh <- err
+			}
+		}()
+	}
+
+	shutdown := func() {
+		_ = control.Shutdown(context.Background())
+		_ = pub.Close()
+		if admin != nil {
+			_ = admin.Shutdown(context.Background())
+		}
+	}
+
 	select {
 	case <-ctx.Done():
-		_ = control.Shutdown(context.Background())
-		_ = pub.Close()
+		shutdown()
 		return ctx.Err()
 	case err := <-errCh:
-		_ = control.Shutdown(context.Background())
-		_ = pub.Close()
+		shutdown()
 		return err
 	}
+}
+
+// adminTLS returns the cert/key for the admin UI, falling back to the control
+// plane's cert/key when admin-specific ones are not set.
+func (s *Server) adminTLS() (cert, key string) {
+	cert, key = s.cfg.AdminTLSCert, s.cfg.AdminTLSKey
+	if cert == "" && key == "" {
+		cert, key = s.cfg.TLSCert, s.cfg.TLSKey
+	}
+	return cert, key
 }

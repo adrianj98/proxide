@@ -13,6 +13,7 @@ HOST="${HOST:-127.0.0.1}"
 CTRL_PORT="${CTRL_PORT:-17223}"
 PUB_PORT="${PUB_PORT:-18080}"
 TGT_PORT="${TGT_PORT:-19000}"
+ADMIN_PORT="${ADMIN_PORT:-19443}"
 TOKEN="${TOKEN:-test-secret}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -41,7 +42,7 @@ pass() { echo "PASS: $1"; }
 
 start_edge() {
 	./bin/edge --control-addr "$HOST:$CTRL_PORT" --public-addr "$HOST:$PUB_PORT" \
-		--token "$TOKEN" >>/tmp/ft-edge.log 2>&1 &
+		--admin-addr "$HOST:$ADMIN_PORT" --token "$TOKEN" >>/tmp/ft-edge.log 2>&1 &
 	EDGE_PID=$!
 }
 
@@ -123,5 +124,17 @@ start_edge
 wait_up || fail "tunnel did not recover after edge restart"
 curl -fsS --max-time 5 "$PUB/after-restart" >/dev/null 2>&1 || fail "request failed after recovery"
 pass "agent reconnect after edge restart"
+
+# 7. Admin console: login + run a command inside the container
+ADMIN="http://$HOST:$ADMIN_PORT"
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST --data 'token=WRONG' "$ADMIN/login")"
+[ "$code" = "401" ] || fail "admin login wrong token: expected 401, got $code"
+code="$(curl -s -o /dev/null -w '%{http_code}' -X POST --data 'echo no' "$ADMIN/exec")"
+[ "$code" = "401" ] || fail "admin exec without session: expected 401, got $code"
+curl -s -o /dev/null -X POST --data "token=$TOKEN" "$ADMIN/login" -c /tmp/ft-cookies.txt
+exec_out="$(curl -s -X POST -H 'Accept: text/plain' --data 'echo DEVPROXY_EXEC_OK' \
+	-b /tmp/ft-cookies.txt "$ADMIN/exec")"
+echo "$exec_out" | grep -q "DEVPROXY_EXEC_OK" || fail "admin exec output unexpected: $exec_out"
+pass "admin console login + command exec"
 
 echo "ALL FUNCTIONAL TESTS PASSED"

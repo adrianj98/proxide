@@ -25,6 +25,9 @@ func main() {
 	flag.StringVar(&cfg.Token, "token", os.Getenv("DEVPROXY_TOKEN"), "shared secret expected from agents (or DEVPROXY_TOKEN)")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", "", "TLS certificate file for the control plane (enables wss)")
 	flag.StringVar(&cfg.TLSKey, "tls-key", "", "TLS key file for the control plane")
+	flag.StringVar(&cfg.AdminAddr, "admin-addr", "", "address for the admin web UI, e.g. :9443 (empty disables it)")
+	flag.StringVar(&cfg.AdminTLSCert, "admin-tls-cert", "", "TLS cert for the admin UI (falls back to --tls-cert)")
+	flag.StringVar(&cfg.AdminTLSKey, "admin-tls-key", "", "TLS key for the admin UI (falls back to --tls-key)")
 	flag.Parse()
 
 	if *showVersion {

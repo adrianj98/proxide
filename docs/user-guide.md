@@ -12,6 +12,8 @@ configuring, and running both sides, plus protocol and security notes.
 - [Running the agent (Server 1)](#running-the-agent-server-1)
 - [TLS](#tls)
 - [Supported protocols](#supported-protocols)
+- [Admin console](#admin-console)
+- [Windows](#windows)
 - [How it works](#how-it-works)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
@@ -145,6 +147,50 @@ handling:
 | SSE | ✅ | long-lived streaming bodies pass through unbuffered |
 | WebSocket | ✅ | full bidirectional |
 | HTTP/3 (QUIC/UDP) | ❌ | not yet; clients fall back to HTTP/2 |
+
+## Admin console
+
+The edge can serve a web console for running shell commands **inside the
+connected container** (through the tunnel, via the agent). Enable it with
+`--admin-addr`:
+
+```bash
+./bin/edge --control-addr :7223 --public-addr :8080 --token secret \
+  --admin-addr :9443 --admin-tls-cert /path/cert.pem --admin-tls-key /path/key.pem
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--admin-addr` | — (disabled) | address for the admin UI, e.g. `:9443` |
+| `--admin-tls-cert` | falls back to `--tls-cert` | TLS cert for the admin UI |
+| `--admin-tls-key` | falls back to `--tls-key` | TLS key for the admin UI |
+
+Open `https://EDGE_HOST:9443/`, log in with the **tunnel token**, type a command,
+and press **Ctrl/Cmd+Enter** (or Run). Output streams back live. Commands run
+with `bash -lc` inside the container (see [Windows](#windows) for the agent
+shell on Windows; override with the agent's `--shell`).
+
+> ⚠️ **Security.** This is remote code execution inside your container. The token
+> is the only thing protecting it. Use a long random token, keep TLS on (the UI
+> warns and refuses cleartext-token exposure assumptions — it logs a warning when
+> served without TLS), and prefer not to expose the admin port more widely than
+> necessary. The edge refuses to start the admin UI when `--token` is empty.
+
+## Windows
+
+devproxy cross-compiles to Windows; releases include `windows/amd64` and
+`windows/arm64` as `.zip` archives containing `devproxy-edge.exe` and
+`devproxy-agent.exe`.
+
+- **Tunnel core (edge + agent + proxying):** works on Windows — all of HTTP/1.1,
+  HTTP/2, SSE, and WebSocket tunnel fine.
+- **Admin console commands:** the agent runs console commands with a shell. On
+  Windows there is usually no `bash`, so the agent defaults to `cmd /C`. Override
+  with `--shell` (e.g. `--shell "bash -lc"` if you have Git Bash/WSL bash on
+  PATH, or `--shell "powershell -NoProfile -Command"`).
+- **Install:** the `curl | sh` installer is POSIX-only (Linux/macOS, or Windows
+  via Git Bash/WSL). Otherwise download the `windows_*.zip` from the release and
+  extract the `.exe`s.
 
 ## How it works
 

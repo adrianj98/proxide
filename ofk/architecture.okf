@@ -68,6 +68,32 @@ knowledge:
         - Enable yamux keepalive for dead-peer detection.
         - Pipe(a, b) - bidirectional io.Copy; close both on either EOF/error.
 
+    - id: admin
+      name: Admin console
+      kind: module
+      package: internal/edge (admin.go, ui.go)
+      responsibilities:
+        - Optional web UI on a separate listener (--admin-addr), TLS via
+          --admin-tls-cert/key (falls back to control-plane cert).
+        - Login with the agent token -> in-memory session cookie (HttpOnly,
+          Secure under TLS, SameSite=Strict). Refuses to start without a token.
+        - /exec runs a command inside the container via Server.RunCommand and
+          streams combined stdout/stderr back to the browser (chunked, flushed).
+      security: >
+        Remote code execution inside the container; token-gated. Warns when
+        served without TLS. Command killed when the operator disconnects.
+
+    - id: exec_protocol
+      name: Tunnel stream framing
+      kind: module
+      package: internal/tunnel/protocol.go
+      responsibilities:
+        - One-byte StreamType prefix on every edge-opened stream:
+          StreamProxy (raw byte pipe) or StreamExec (length-prefixed command).
+        - Edge writes the type; agent reads it and dispatches (serveProxy vs
+          serveExec). Agent runs StreamExec via a shell (bash -lc on Unix,
+          cmd /C on Windows; --shell override).
+
     - id: target
       name: Container service
       kind: external
@@ -133,7 +159,13 @@ knowledge:
 
   build_and_release:
     version: internal/buildinfo.Version, set via ldflags; -version flag on both binaries
-    cross_compile: scripts/build-release.sh -> linux/darwin x amd64/arm64 tarballs + checksums.txt
+    cross_compile: >
+      scripts/build-release.sh -> linux/darwin x amd64/arm64 (.tar.gz) and
+      windows x amd64/arm64 (.zip, .exe) + checksums.txt
+    windows: >
+      Tunnel core works. Admin-console commands need a shell; agent defaults to
+      cmd /C on Windows (bash -lc on Unix), override with --shell. curl|sh
+      installer is POSIX-only; Windows users extract the zip.
     ci: .github/workflows/release.yml on v* tags -> GitHub Release (softprops/action-gh-release)
     install: scripts/install.sh - curl|sh; detects os/arch; pulls release tarball; installs both binaries
     testing: >

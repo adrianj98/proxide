@@ -23,6 +23,7 @@ func main() {
 	flag.StringVar(&cfg.Target, "target", "", "local service to forward to, e.g. 127.0.0.1:8080")
 	flag.StringVar(&cfg.Token, "token", os.Getenv("DEVPROXY_TOKEN"), "shared secret presented to the edge (or DEVPROXY_TOKEN)")
 	flag.BoolVar(&cfg.Insecure, "insecure", false, "skip TLS verification (wss with self-signed certs; dev only)")
+	flag.StringVar(&cfg.Shell, "shell", "", "shell for admin-console commands, e.g. \"bash -lc\" (default: bash on Unix, cmd on Windows)")
 	flag.Parse()
 
 	if *showVersion {

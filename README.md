@@ -31,7 +31,9 @@ Install the latest release binaries (`devproxy-edge` and `devproxy-agent`) with:
 curl -fsSL https://raw.githubusercontent.com/alertd/devproxy/main/scripts/install.sh | sh
 ```
 
-Supports Linux and macOS on amd64/arm64. Overrides:
+Supports Linux and macOS on amd64/arm64 (Windows builds ship as
+`windows_*.zip` on the release page; the installer itself is POSIX-only).
+Overrides:
 `DEVPROXY_VERSION` (tag, default `latest`), `DEVPROXY_BIN_DIR` (default
 `/usr/local/bin`), `DEVPROXY_REPO`. Releases are published automatically when a
 `v*` tag is pushed (see [.github/workflows/release.yml](.github/workflows/release.yml)).
@@ -61,7 +63,9 @@ and protocol notes. Architecture is documented in
 ## Status / scope
 
 Supported today: TCP-based protocols — HTTP/1.1, HTTP/2, SSE, WebSocket; token
-auth; optional TLS (`wss://`) on the control plane; automatic agent reconnect.
+auth; optional TLS (`wss://`) on the control plane; automatic agent reconnect;
+an optional web **admin console** (`--admin-addr`) to run shell commands inside
+the container through the tunnel; Linux/macOS/Windows binaries.
 
 Not yet (future phases): HTTP/3 (QUIC/UDP), L7 hostname/path routing, request
 inspection dashboard, multiple tunnels behind one edge.

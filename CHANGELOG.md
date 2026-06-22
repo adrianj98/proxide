@@ -42,6 +42,24 @@ All notable changes to devproxy are recorded here.
 - Automatic agent reconnect after an edge restart.
 - TLS (`wss://`) control plane end-to-end with a self-signed cert.
 
+### Added (admin console)
+- **Web admin console on the edge.** Optional `--admin-addr` serves a login +
+  console UI (separate listener, TLS via `--admin-tls-cert/--admin-tls-key`,
+  falling back to the control-plane cert). Login uses the agent `--token`; the
+  server refuses to start the UI without a token. Sessions are in-memory cookies
+  (`HttpOnly`, `Secure` under TLS, `SameSite=Strict`).
+- **Run commands inside the container.** The console runs a command through the
+  tunnel: the edge opens an exec stream, the agent runs it via a shell and
+  streams combined stdout/stderr back live. New tunnel stream-type framing
+  (`internal/tunnel/protocol.go`) distinguishes proxy vs exec streams; the
+  command is killed if the operator disconnects.
+
+### Added (platforms)
+- **Windows builds.** Release now also produces `windows/amd64` and
+  `windows/arm64` (`.zip` archives with `.exe` binaries). The agent shell for
+  console commands auto-selects `cmd /C` on Windows (`bash -lc` on Unix), with a
+  `--shell` override.
+
 ### Changed
 - Default `--control-addr` is now `:7223` (was `:7000`) so the edge runs on
   macOS out of the box — port `7000` is owned by the macOS AirPlay Receiver,
