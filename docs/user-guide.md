@@ -37,12 +37,12 @@ Both produce static binaries that are easy to drop into a container image.
 ## Running the edge (Server 2)
 
 ```bash
-./bin/edge --control-addr :7000 --public-addr :8080 --token secret
+./bin/edge --control-addr :7223 --public-addr :8080 --token secret
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--control-addr` | `:7000` | address where the agent connects (websocket `/tunnel`) |
+| `--control-addr` | `:7223` | address where the agent connects (websocket `/tunnel`) |
 | `--public-addr` | `:8080` | address where external clients connect |
 | `--token` | `$DEVPROXY_TOKEN` | shared secret the agent must present; empty disables auth (logs a warning) |
 | `--tls-cert` | — | TLS certificate file for the control plane (enables `wss://`) |
@@ -55,12 +55,12 @@ connected are dropped immediately.
 ## Running the agent (Server 1)
 
 ```bash
-./bin/agent --edge-url ws://EDGE_HOST:7000/tunnel --target 127.0.0.1:9000 --token secret
+./bin/agent --edge-url ws://EDGE_HOST:7223/tunnel --target 127.0.0.1:9000 --token secret
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--edge-url` | — (required) | edge tunnel endpoint, e.g. `ws://host:7000/tunnel` or `wss://...` |
+| `--edge-url` | — (required) | edge tunnel endpoint, e.g. `ws://host:7223/tunnel` or `wss://...` |
 | `--target` | — (required) | local service to forward to, `host:port` (e.g. `127.0.0.1:9000`) |
 | `--token` | `$DEVPROXY_TOKEN` | shared secret presented to the edge |
 | `--insecure` | `false` | skip TLS verification (for `wss://` with self-signed certs; dev only) |
@@ -75,11 +75,11 @@ are encrypted in transit:
 
 ```bash
 # edge with a real or self-signed cert
-./bin/edge --control-addr :7000 --public-addr :8080 --token secret \
+./bin/edge --control-addr :7223 --public-addr :8080 --token secret \
   --tls-cert /path/cert.pem --tls-key /path/key.pem
 
 # agent over wss
-./bin/agent --edge-url wss://EDGE_HOST:7000/tunnel --target 127.0.0.1:9000 --token secret
+./bin/agent --edge-url wss://EDGE_HOST:7223/tunnel --target 127.0.0.1:9000 --token secret
 ```
 
 With a self-signed cert in development, add `--insecure` to the agent.
@@ -116,10 +116,11 @@ handling:
 
 ## Troubleshooting
 
-- **`403` on connect (macOS)** — port `7000` (and `5000`) is used by the macOS
-  AirPlay Receiver, which returns `403`. Use a different `--control-addr`
-  (e.g. `:17000`) or disable AirPlay Receiver in System Settings → General →
-  AirDrop & Handoff.
+- **`403` on connect (macOS)** — the default `--control-addr` is `:7223`
+  specifically to avoid the macOS AirPlay Receiver, which owns ports `7000` and
+  `5000` and returns `403`. If you change `--control-addr` to one of those on a
+  Mac, pick another port or disable AirPlay Receiver in System Settings →
+  General → AirDrop & Handoff.
 - **`401` on connect** — token mismatch between agent and edge.
 - **`dropping … no agent connected`** in the edge log — a public request arrived
   while no agent was connected (agent down / reconnecting).

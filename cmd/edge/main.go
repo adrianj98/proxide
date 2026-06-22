@@ -17,7 +17,7 @@ import (
 
 func main() {
 	cfg := edge.Config{}
-	flag.StringVar(&cfg.ControlAddr, "control-addr", ":7000", "address for the agent websocket control plane")
+	flag.StringVar(&cfg.ControlAddr, "control-addr", ":7223", "address for the agent websocket control plane")
 	flag.StringVar(&cfg.PublicAddr, "public-addr", ":8080", "address for inbound public traffic")
 	flag.StringVar(&cfg.Token, "token", os.Getenv("DEVPROXY_TOKEN"), "shared secret expected from agents (or DEVPROXY_TOKEN)")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", "", "TLS certificate file for the control plane (enables wss)")

@@ -30,6 +30,10 @@ All notable changes to devproxy are recorded here.
 - Automatic agent reconnect after an edge restart.
 - TLS (`wss://`) control plane end-to-end with a self-signed cert.
 
+### Changed
+- Default `--control-addr` is now `:7223` (was `:7000`) so the edge runs on
+  macOS out of the box — port `7000` is owned by the macOS AirPlay Receiver,
+  which returns `403`.
+
 ### Notes
-- macOS: port `7000` collides with the AirPlay Receiver (returns `403`); use a
-  different `--control-addr` (e.g. `:17000`).
+- macOS: avoid `--control-addr :7000`/`:5000` (AirPlay Receiver, returns `403`).

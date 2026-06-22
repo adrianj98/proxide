@@ -24,7 +24,7 @@ knowledge:
         - Listen on a public TCP port (public plane).
         - For each public connection, open a yamux stream and pipe bytes.
       config:
-        control_addr: ":7000"      # websocket /tunnel endpoint
+        control_addr: ":7223"      # websocket /tunnel endpoint (avoids macOS AirPlay)
         public_addr: ":8080"       # inbound public traffic
         token: "$DEVPROXY_TOKEN"   # shared secret ("" disables auth)
         tls_cert: optional         # enables wss on the control plane
@@ -139,4 +139,5 @@ knowledge:
     - id: macos-port-7000
       note: >
         macOS AirPlay Receiver listens on *:7000 (and 5000) and returns 403.
-        Use a different --control-addr on macOS (e.g. :17000).
+        The default --control-addr is :7223 to avoid this; only an issue if you
+        override it to 7000/5000 on a Mac.

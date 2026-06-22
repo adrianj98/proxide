@@ -30,10 +30,10 @@ go build -o bin/edge ./cmd/edge
 go build -o bin/agent ./cmd/agent
 
 # On the public host (Server 2):
-./bin/edge --control-addr :7000 --public-addr :8080 --token secret
+./bin/edge --control-addr :7223 --public-addr :8080 --token secret
 
 # Inside the container (Server 1), forwarding to a local service on :9000:
-./bin/agent --edge-url ws://EDGE_HOST:7000/tunnel --target 127.0.0.1:9000 --token secret
+./bin/agent --edge-url ws://EDGE_HOST:7223/tunnel --target 127.0.0.1:9000 --token secret
 
 # Anyone can now reach the container service via the edge:
 curl http://EDGE_HOST:8080/
