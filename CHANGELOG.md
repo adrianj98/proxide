@@ -29,6 +29,11 @@ All notable changes to devproxy are recorded here.
   `scripts/install.sh` provides a `curl | sh` installer.
 - **Version reporting.** `internal/buildinfo.Version` (set via ldflags at
   release time) and a `-version` flag on both binaries.
+- **Functional tests.** `scripts/functional-test.sh` drives the real edge +
+  agent + pseudo target service end-to-end (HTTP, 20× concurrency, SSE,
+  WebSocket via `cmd/_wsprobe`, token auth `401`/`426`, agent reconnect). The
+  release workflow now runs `go vet`, `go test`, and the functional test in a
+  `test` job that gates the `release` job (no publish unless tests pass).
 
 ### Verified
 - HTTP/1.1 (incl. keep-alive), 10× concurrent requests (yamux multiplexing),

@@ -13,6 +13,7 @@ configuring, and running both sides, plus protocol and security notes.
 - [TLS](#tls)
 - [Supported protocols](#supported-protocols)
 - [How it works](#how-it-works)
+- [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 - [Limitations](#limitations)
 
@@ -155,6 +156,31 @@ handling:
 4. For each inbound connection on the public port, the edge **opens a yamux
    stream**; the agent **accepts** it, dials the local target, and the two are
    piped byte-for-byte in both directions.
+
+## Testing
+
+`scripts/functional-test.sh` is an end-to-end functional test. It builds the
+binaries, starts a pseudo target service (`cmd/_testserver` — HTTP/SSE/WebSocket)
+plus the edge and agent, then drives traffic through the public port and asserts:
+
+1. HTTP/1.1 request/response
+2. 20 concurrent requests (yamux multiplexing)
+3. SSE streaming
+4. WebSocket echo (via `cmd/_wsprobe`)
+5. Token auth on the control plane (`401` reject, `426` for a valid token)
+6. Agent reconnect after an edge restart
+
+```bash
+scripts/functional-test.sh
+```
+
+It uses non-default localhost ports (`17223` control, `18080` public, `19000`
+target) to avoid the macOS AirPlay collision; override via `CTRL_PORT`,
+`PUB_PORT`, `TGT_PORT`, `TOKEN`, `HOST`.
+
+This test also runs in CI: the release workflow's `test` job runs `go vet`,
+`go test ./...`, and this script, and the `release` job only publishes if it
+passes.
 
 ## Troubleshooting
 

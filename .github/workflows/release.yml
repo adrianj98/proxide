@@ -11,7 +11,28 @@ permissions:
   contents: write # required to create the release and upload assets
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Functional tests
+        run: scripts/functional-test.sh
+
   release:
+    needs: test # do not publish unless tests pass
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

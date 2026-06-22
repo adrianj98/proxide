@@ -136,6 +136,11 @@ knowledge:
     cross_compile: scripts/build-release.sh -> linux/darwin x amd64/arm64 tarballs + checksums.txt
     ci: .github/workflows/release.yml on v* tags -> GitHub Release (softprops/action-gh-release)
     install: scripts/install.sh - curl|sh; detects os/arch; pulls release tarball; installs both binaries
+    testing: >
+      scripts/functional-test.sh - end-to-end (HTTP, concurrency, SSE, WebSocket
+      via cmd/_wsprobe, token auth, reconnect) against real edge+agent+pseudo
+      target (cmd/_testserver). Release workflow gates publish on a test job
+      (go vet + go test + functional-test.sh).
 
   dependencies:
     - github.com/coder/websocket   # websocket + NetConn adapter
