@@ -5,9 +5,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -154,30 +156,47 @@ func (a *Agent) serveProxy(stream net.Conn) {
 	tunnel.Pipe(stream, target)
 }
 
-// syncWriter serializes concurrent writes from a command's stdout and stderr
-// onto a single stream (yamux streams are not safe for concurrent writers).
-type syncWriter struct {
+// frameWriter wraps each write from a command's stdout/stderr in an exec output
+// frame. It is mutex-guarded because stdout and stderr write concurrently and
+// yamux streams are not safe for concurrent writers.
+type frameWriter struct {
 	mu sync.Mutex
 	w  net.Conn
 }
 
-func (s *syncWriter) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.w.Write(p)
+func (f *frameWriter) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := tunnel.WriteExecOutput(f.w, p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
-// serveExec runs a command inside the container and streams its combined
-// stdout/stderr back over the stream. The command is killed if the edge closes
-// the stream (e.g. the operator navigated away).
+// validDir returns p if it is an existing directory, else "".
+func validDir(p string) string {
+	if p == "" {
+		return ""
+	}
+	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+		return p
+	}
+	return ""
+}
+
+// serveExec runs a command inside the container starting in the requested
+// directory, streams its combined stdout/stderr back as output frames, and ends
+// with a result frame carrying the exit code and the directory the command
+// finished in (so the edge can persist it for the next command). The command is
+// killed if the edge closes the stream (e.g. the operator navigated away).
 func (a *Agent) serveExec(stream net.Conn) {
 	defer stream.Close()
 
-	cmdStr, err := tunnel.ReadExecRequest(stream)
+	reqCwd, cmdStr, err := tunnel.ReadExecRequest(stream)
 	if err != nil {
 		return
 	}
-	log.Printf("agent: exec: %s", cmdStr)
+	log.Printf("agent: exec (cwd=%q): %s", reqCwd, cmdStr)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -193,12 +212,47 @@ func (a *Agent) serveExec(stream net.Conn) {
 		}
 	}()
 
-	out := &syncWriter{w: stream}
-	args := append(append([]string{}, a.shell[1:]...), cmdStr)
+	out := &frameWriter{w: stream}
+	startDir := validDir(reqCwd)
+	finalCwd := startDir
+
+	// On POSIX shells, capture the shell's final $PWD to a temp file (kept out
+	// of stdout/stderr) so a `cd` persists to the next command.
+	cmdLine := cmdStr
+	pwdFile := ""
+	if a.shell[0] != "cmd" {
+		if f, err := os.CreateTemp("", "devproxy-cwd-*"); err == nil {
+			pwdFile = f.Name()
+			_ = f.Close()
+			defer os.Remove(pwdFile)
+			cmdLine = cmdStr + "\n__dp_rc=$?; pwd > '" + pwdFile + "' 2>/dev/null; exit $__dp_rc"
+		}
+	}
+
+	args := append(append([]string{}, a.shell[1:]...), cmdLine)
 	cmd := exec.CommandContext(ctx, a.shell[0], args...)
+	cmd.Dir = startDir
 	cmd.Stdout = out
 	cmd.Stderr = out
+
+	var exitCode int32
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(out, "\n[devproxy: %v]\n", err)
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			exitCode = int32(ee.ExitCode())
+		} else {
+			fmt.Fprintf(out, "\n[devproxy: %v]\n", err)
+			exitCode = -1
+		}
 	}
+
+	if pwdFile != "" {
+		if data, err := os.ReadFile(pwdFile); err == nil {
+			if s := strings.TrimRight(string(data), "\r\n"); s != "" {
+				finalCwd = s
+			}
+		}
+	}
+
+	_ = tunnel.WriteExecResult(stream, exitCode, finalCwd)
 }

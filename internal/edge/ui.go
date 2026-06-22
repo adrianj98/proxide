@@ -44,8 +44,9 @@ const consoleHTML = `<!doctype html><html><head><meta charset="utf-8"><title>dev
     <h1>devproxy console</h1>
     <form method="post" action="/logout"><button type="submit">Log out</button></form>
   </div>
-  <p class="muted">Commands run with <code>bash -lc</code> inside the connected container. Press <b>Ctrl/Cmd+Enter</b> to run.</p>
-  <textarea id="cmd" placeholder="e.g. uname -a && ls -la" autofocus></textarea>
+  <p class="muted">Commands run inside the connected container. <code>cd</code> persists between commands. Press <b>Ctrl/Cmd+Enter</b> to run.</p>
+  <div class="muted" style="margin-bottom:6px">cwd: <span id="cwd">…</span></div>
+  <textarea id="cmd" placeholder="e.g. cd /var/log && ls -la" autofocus></textarea>
   <div style="margin:12px 0"><button id="run" onclick="run()">Run</button></div>
   <pre id="out"></pre>
 </div>
@@ -53,9 +54,14 @@ const consoleHTML = `<!doctype html><html><head><meta charset="utf-8"><title>dev
 const cmd = document.getElementById('cmd');
 const out = document.getElementById('out');
 const btn = document.getElementById('run');
+const cwdEl = document.getElementById('cwd');
 cmd.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
 });
+async function refreshCwd() {
+  try { const r = await fetch('/cwd', { headers:{'Accept':'text/plain'} }); if (r.ok) cwdEl.textContent = await r.text(); } catch (e) {}
+}
+refreshCwd();
 async function run() {
   const command = cmd.value;
   if (!command.trim()) return;
@@ -76,6 +82,7 @@ async function run() {
     out.textContent += '\n[client error: ' + err + ']';
   } finally {
     btn.disabled = false;
+    refreshCwd();
   }
 }
 </script>

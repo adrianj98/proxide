@@ -53,6 +53,11 @@ All notable changes to devproxy are recorded here.
   streams combined stdout/stderr back live. New tunnel stream-type framing
   (`internal/tunnel/protocol.go`) distinguishes proxy vs exec streams; the
   command is killed if the operator disconnects.
+- **Persistent working directory.** `cd` (and relative paths) persist between
+  console commands. The agent reports the shell's final `$PWD` out-of-band (via
+  a temp file, kept out of command output) in a framed result; the edge stores
+  it per login session and resumes there next command. The UI shows the current
+  directory (`/cwd` endpoint).
 
 ### Added (platforms)
 - **Windows builds.** Release now also produces `windows/amd64` and

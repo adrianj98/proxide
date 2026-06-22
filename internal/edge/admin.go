@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/alertd/devproxy/internal/tunnel"
 )
 
 const (
@@ -17,21 +19,27 @@ const (
 	maxCommand    = 1 << 20 // 1 MiB
 )
 
+// adminSession is a logged-in console session. cwd persists between commands.
+type adminSession struct {
+	expiry time.Time
+	cwd    string
+}
+
 // adminSessions is an in-memory store of valid admin login sessions. Sessions do
 // not survive an edge restart.
 type adminSessions struct {
 	mu sync.Mutex
-	m  map[string]time.Time // session id -> expiry
+	m  map[string]*adminSession // session id -> session
 }
 
 func newAdminSessions() *adminSessions {
-	return &adminSessions{m: make(map[string]time.Time)}
+	return &adminSessions{m: make(map[string]*adminSession)}
 }
 
 func (a *adminSessions) create() string {
 	id := randomToken()
 	a.mu.Lock()
-	a.m[id] = time.Now().Add(sessionTTL)
+	a.m[id] = &adminSession{expiry: time.Now().Add(sessionTTL)}
 	a.mu.Unlock()
 	return id
 }
@@ -42,15 +50,34 @@ func (a *adminSessions) valid(id string) bool {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	exp, ok := a.m[id]
+	s, ok := a.m[id]
 	if !ok {
 		return false
 	}
-	if time.Now().After(exp) {
+	if time.Now().After(s.expiry) {
 		delete(a.m, id)
 		return false
 	}
 	return true
+}
+
+// cwd returns the session's current working directory ("" = agent default).
+func (a *adminSessions) cwd(id string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if s, ok := a.m[id]; ok {
+		return s.cwd
+	}
+	return ""
+}
+
+// setCwd records the directory the last command ended in.
+func (a *adminSessions) setCwd(id, cwd string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if s, ok := a.m[id]; ok {
+		s.cwd = cwd
+	}
 }
 
 func (a *adminSessions) delete(id string) {
@@ -74,6 +101,7 @@ func (s *Server) adminHandler() http.Handler {
 	mux.HandleFunc("/login", s.handleLogin(secureCookies))
 	mux.HandleFunc("/logout", s.handleLogout(secureCookies))
 	mux.HandleFunc("/exec", s.requireAuth(s.handleExec))
+	mux.HandleFunc("/cwd", s.requireAuth(s.handleCwd))
 	mux.HandleFunc("/", s.requireAuth(s.handleConsole))
 	return mux
 }
@@ -143,7 +171,26 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 	writeHTML(w, consoleHTML)
 }
 
-// handleExec runs a command inside the container and streams the output back.
+// sessionID returns the (already-validated) session id from the request cookie.
+func sessionID(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// handleCwd returns the session's current working directory as plain text.
+func (s *Server) handleCwd(w http.ResponseWriter, r *http.Request) {
+	cwd := s.sessions.cwd(sessionID(r))
+	if cwd == "" {
+		cwd = "~"
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, cwd)
+}
+
+// handleExec runs a command inside the container starting in the session's cwd,
+// streams the output back, and persists the directory the command ended in.
 func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -160,7 +207,8 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rc, err := s.RunCommand(cmd)
+	id := sessionID(r)
+	stream, err := s.RunCommand(s.sessions.cwd(id), cmd)
 	if errors.Is(err, ErrNoAgent) {
 		http.Error(w, "no agent connected", http.StatusServiceUnavailable)
 		return
@@ -169,36 +217,39 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer rc.Close()
+	defer stream.Close()
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	flusher, _ := w.(http.Flusher)
 
 	// Stop the command if the client goes away.
 	go func() {
 		<-r.Context().Done()
-		_ = rc.Close()
+		_ = stream.Close()
 	}()
 
-	fw := &flushWriter{w: w}
-	if f, ok := w.(http.Flusher); ok {
-		fw.f = f
+	for {
+		frame, payload, err := tunnel.ReadExecFrame(stream)
+		if err != nil {
+			return
+		}
+		switch frame {
+		case tunnel.ExecOutput:
+			if _, err := w.Write(payload); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		case tunnel.ExecResult:
+			_, cwd := tunnel.ParseExecResult(payload)
+			if cwd != "" {
+				s.sessions.setCwd(id, cwd)
+			}
+			return
+		}
 	}
-	_, _ = io.Copy(fw, rc)
-}
-
-// flushWriter flushes after every write so output streams to the browser live.
-type flushWriter struct {
-	w io.Writer
-	f http.Flusher
-}
-
-func (fw *flushWriter) Write(p []byte) (int, error) {
-	n, err := fw.w.Write(p)
-	if fw.f != nil {
-		fw.f.Flush()
-	}
-	return n, err
 }
 
 func writeHTML(w http.ResponseWriter, html string) {

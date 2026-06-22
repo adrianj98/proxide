@@ -125,10 +125,10 @@ func (s *Server) servePublicConn(pc net.Conn) {
 	tunnel.Pipe(pc, stream)
 }
 
-// RunCommand opens an exec stream to the agent and returns a reader of the
-// command's combined stdout/stderr. Closing the returned ReadCloser tells the
-// agent to terminate the command.
-func (s *Server) RunCommand(cmd string) (io.ReadCloser, error) {
+// RunCommand opens an exec stream to the agent for a command starting in cwd
+// (empty = agent default). The returned stream carries framed output; closing it
+// tells the agent to terminate the command.
+func (s *Server) RunCommand(cwd, cmd string) (io.ReadWriteCloser, error) {
 	sess := s.currentSession()
 	if sess == nil {
 		return nil, ErrNoAgent
@@ -141,7 +141,7 @@ func (s *Server) RunCommand(cmd string) (io.ReadCloser, error) {
 		_ = stream.Close()
 		return nil, err
 	}
-	if err := tunnel.WriteExecRequest(stream, cmd); err != nil {
+	if err := tunnel.WriteExecRequest(stream, cwd, cmd); err != nil {
 		_ = stream.Close()
 		return nil, err
 	}

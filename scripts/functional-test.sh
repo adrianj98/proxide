@@ -137,4 +137,12 @@ exec_out="$(curl -s -X POST -H 'Accept: text/plain' --data 'echo DEVPROXY_EXEC_O
 echo "$exec_out" | grep -q "DEVPROXY_EXEC_OK" || fail "admin exec output unexpected: $exec_out"
 pass "admin console login + command exec"
 
+# 8. Working directory persists between commands
+curl -s -o /dev/null -X POST -H 'Accept: text/plain' --data 'cd /' -b /tmp/ft-cookies.txt "$ADMIN/exec"
+pwd_out="$(curl -s -X POST -H 'Accept: text/plain' --data 'pwd' -b /tmp/ft-cookies.txt "$ADMIN/exec")"
+echo "$pwd_out" | grep -q '^/$' || fail "cwd did not persist (expected /, got: $pwd_out)"
+cwd_out="$(curl -s -b /tmp/ft-cookies.txt "$ADMIN/cwd")"
+[ "$cwd_out" = "/" ] || fail "/cwd did not report persisted dir (got: $cwd_out)"
+pass "working directory persists across commands"
+
 echo "ALL FUNCTIONAL TESTS PASSED"

@@ -170,6 +170,13 @@ and press **Ctrl/Cmd+Enter** (or Run). Output streams back live. Commands run
 with `bash -lc` inside the container (see [Windows](#windows) for the agent
 shell on Windows; override with the agent's `--shell`).
 
+**Working directory persists.** `cd` (and relative paths) carry over to the next
+command — the directory is remembered per login session and shown above the
+input. For example, `cd /var/log` then `ls` lists `/var/log`. The directory is
+captured out-of-band so it never mixes into command output. (State other than the
+directory — environment variables, shell functions — does not persist; each
+command is still a fresh shell.)
+
 > ⚠️ **Security.** This is remote code execution inside your container. The token
 > is the only thing protecting it. Use a long random token, keep TLS on (the UI
 > warns and refuses cleartext-token exposure assumptions — it logs a warning when
