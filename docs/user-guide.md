@@ -6,6 +6,7 @@ configuring, and running both sides, plus protocol and security notes.
 
 ## Contents
 - [Concepts](#concepts)
+- [Install](#install)
 - [Build](#build)
 - [Running the edge (Server 2)](#running-the-edge-server-2)
 - [Running the agent (Server 1)](#running-the-agent-server-1)
@@ -25,6 +26,46 @@ configuring, and running both sides, plus protocol and security notes.
 Only the **agent** makes a connection, and it is **outbound**, so the container
 needs no inbound firewall rules or public IP.
 
+## Install
+
+### From a release (curl one-liner)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alertd/devproxy/main/scripts/install.sh | sh
+```
+
+This detects your OS/arch (Linux or macOS, amd64/arm64), downloads the matching
+release tarball, and installs `devproxy-edge` and `devproxy-agent` into
+`/usr/local/bin` (using `sudo` only if that directory isn't writable).
+
+Environment overrides:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEVPROXY_VERSION` | `latest` | install a specific tag, e.g. `v0.1.0` |
+| `DEVPROXY_BIN_DIR` | `/usr/local/bin` | install location (e.g. `$HOME/.local/bin` to avoid sudo) |
+| `DEVPROXY_REPO` | `alertd/devproxy` | source `owner/repo` |
+
+```bash
+# pinned version into a user-writable dir (no sudo)
+curl -fsSL https://raw.githubusercontent.com/alertd/devproxy/main/scripts/install.sh \
+  | DEVPROXY_VERSION=v0.1.0 DEVPROXY_BIN_DIR="$HOME/.local/bin" sh
+```
+
+Verify: `devproxy-edge -version` / `devproxy-agent -version`.
+
+### How releases are produced
+
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which runs
+`scripts/build-release.sh` to cross-compile both binaries for
+linux/darwin × amd64/arm64 into per-platform `*.tar.gz` archives plus a
+`checksums.txt`, then publishes them as a GitHub Release.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Build
 
 ```bash
@@ -32,7 +73,8 @@ go build -o bin/edge  ./cmd/edge
 go build -o bin/agent ./cmd/agent
 ```
 
-Both produce static binaries that are easy to drop into a container image.
+Both produce static binaries that are easy to drop into a container image. Pass
+`-version` to either binary to print its build version.
 
 ## Running the edge (Server 2)
 

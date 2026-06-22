@@ -23,7 +23,22 @@ with no protocol-specific code. Concurrency comes from
 [yamux](https://github.com/hashicorp/yamux) multiplexing — every inbound
 connection becomes its own stream over the single websocket.
 
+## Install
+
+Install the latest release binaries (`devproxy-edge` and `devproxy-agent`) with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alertd/devproxy/main/scripts/install.sh | sh
+```
+
+Supports Linux and macOS on amd64/arm64. Overrides:
+`DEVPROXY_VERSION` (tag, default `latest`), `DEVPROXY_BIN_DIR` (default
+`/usr/local/bin`), `DEVPROXY_REPO`. Releases are published automatically when a
+`v*` tag is pushed (see [.github/workflows/release.yml](.github/workflows/release.yml)).
+
 ## Quick start
+
+Or build from source:
 
 ```bash
 go build -o bin/edge ./cmd/edge

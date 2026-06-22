@@ -22,6 +22,13 @@ All notable changes to devproxy are recorded here.
 - **Docs**: `README.md`, `docs/user-guide.md`, `ofk/architecture.okf`.
 - Test-only target server (`cmd/_testserver`) serving HTTP, SSE, and a WebSocket
   echo endpoint for end-to-end verification.
+- **Releases & install.** Tag-triggered GitHub Actions workflow
+  (`.github/workflows/release.yml`) cross-compiles both binaries for
+  linux/darwin × amd64/arm64 into per-platform tarballs + `checksums.txt` and
+  publishes a GitHub Release. `scripts/build-release.sh` does the cross-compile;
+  `scripts/install.sh` provides a `curl | sh` installer.
+- **Version reporting.** `internal/buildinfo.Version` (set via ldflags at
+  release time) and a `-version` flag on both binaries.
 
 ### Verified
 - HTTP/1.1 (incl. keep-alive), 10× concurrent requests (yamux multiplexing),

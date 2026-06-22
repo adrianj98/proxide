@@ -7,22 +7,30 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/alertd/devproxy/internal/buildinfo"
 	"github.com/alertd/devproxy/internal/edge"
 )
 
 func main() {
 	cfg := edge.Config{}
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.StringVar(&cfg.ControlAddr, "control-addr", ":7223", "address for the agent websocket control plane")
 	flag.StringVar(&cfg.PublicAddr, "public-addr", ":8080", "address for inbound public traffic")
 	flag.StringVar(&cfg.Token, "token", os.Getenv("DEVPROXY_TOKEN"), "shared secret expected from agents (or DEVPROXY_TOKEN)")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", "", "TLS certificate file for the control plane (enables wss)")
 	flag.StringVar(&cfg.TLSKey, "tls-key", "", "TLS key file for the control plane")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("devproxy-edge %s\n", buildinfo.Version)
+		return
+	}
 
 	if cfg.Token == "" {
 		log.Printf("edge: WARNING running without --token; any agent may connect")

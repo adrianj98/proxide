@@ -131,6 +131,12 @@ knowledge:
     - Multiple tunnels/agents behind one edge
     - ACME / terminating-TLS edge; half-close stream optimization
 
+  build_and_release:
+    version: internal/buildinfo.Version, set via ldflags; -version flag on both binaries
+    cross_compile: scripts/build-release.sh -> linux/darwin x amd64/arm64 tarballs + checksums.txt
+    ci: .github/workflows/release.yml on v* tags -> GitHub Release (softprops/action-gh-release)
+    install: scripts/install.sh - curl|sh; detects os/arch; pulls release tarball; installs both binaries
+
   dependencies:
     - github.com/coder/websocket   # websocket + NetConn adapter
     - github.com/hashicorp/yamux   # stream multiplexer
