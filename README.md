@@ -1,0 +1,52 @@
+# devproxy
+
+An outbound-only **reverse tunnel** for exposing a service that runs in a
+container with **no ingress**. Same shape as ngrok / cloudflared / frp / inlets.
+
+```
+[ public client ] --TCP--> [ Edge (Server 2) ]
+                                |  one yamux stream per connection
+                            [ websocket ]  <-- dialed OUT by the agent
+                                |
+                            [ Agent (Server 1) ] --TCP--> [ your container service ]
+```
+
+- **Agent (Server 1)** runs inside the no-ingress container. It dials *out* to
+  the edge over a websocket and forwards traffic to the local service.
+- **Edge (Server 2)** runs somewhere publicly reachable. It accepts the agent's
+  websocket and listens on a public port; inbound traffic is forwarded back
+  through the tunnel.
+
+It is an **L4 (byte-stream) tunnel**: the edge never parses HTTP, it just pipes
+bytes. As a result **WebSocket, HTTP/1.1, HTTP/2, and SSE all work transparently**
+with no protocol-specific code. Concurrency comes from
+[yamux](https://github.com/hashicorp/yamux) multiplexing — every inbound
+connection becomes its own stream over the single websocket.
+
+## Quick start
+
+```bash
+go build -o bin/edge ./cmd/edge
+go build -o bin/agent ./cmd/agent
+
+# On the public host (Server 2):
+./bin/edge --control-addr :7000 --public-addr :8080 --token secret
+
+# Inside the container (Server 1), forwarding to a local service on :9000:
+./bin/agent --edge-url ws://EDGE_HOST:7000/tunnel --target 127.0.0.1:9000 --token secret
+
+# Anyone can now reach the container service via the edge:
+curl http://EDGE_HOST:8080/
+```
+
+See [docs/user-guide.md](docs/user-guide.md) for full flag reference, TLS setup,
+and protocol notes. Architecture is documented in
+[ofk/architecture.okf](ofk/architecture.okf).
+
+## Status / scope
+
+Supported today: TCP-based protocols — HTTP/1.1, HTTP/2, SSE, WebSocket; token
+auth; optional TLS (`wss://`) on the control plane; automatic agent reconnect.
+
+Not yet (future phases): HTTP/3 (QUIC/UDP), L7 hostname/path routing, request
+inspection dashboard, multiple tunnels behind one edge.

@@ -15,9 +15,10 @@ import (
 
 // Config holds the agent settings.
 type Config struct {
-	EdgeURL string // edge tunnel endpoint, e.g. ws://edge:7000/tunnel
-	Target  string // local service to forward to, e.g. 127.0.0.1:8080
-	Token   string // shared secret presented to the edge
+	EdgeURL  string // edge tunnel endpoint, e.g. ws://edge:7000/tunnel
+	Target   string // local service to forward to, e.g. 127.0.0.1:8080
+	Token    string // shared secret presented to the edge
+	Insecure bool   // skip TLS verification for wss with self-signed certs
 
 	MinBackoff time.Duration // initial reconnect delay (default 1s)
 	MaxBackoff time.Duration // max reconnect delay (default 30s)
@@ -39,7 +40,7 @@ func New(cfg Config) *Agent {
 	}
 	return &Agent{
 		cfg:    cfg,
-		dialer: &transport.WSDialer{URL: cfg.EdgeURL, Token: cfg.Token},
+		dialer: &transport.WSDialer{URL: cfg.EdgeURL, Token: cfg.Token, Insecure: cfg.Insecure},
 	}
 }
 

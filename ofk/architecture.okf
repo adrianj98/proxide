@@ -1,0 +1,142 @@
+# Open Knowledge Format (OKF) — devproxy architecture
+# A structured, machine-readable description of the system's components,
+# relationships, data flows, and design decisions. Keep in sync with the code.
+
+okf_version: "0.1"
+knowledge:
+  domain: devproxy
+  summary: >
+    Outbound-only L4 reverse tunnel. An agent inside a no-ingress container
+    dials out to a public edge over a websocket; the edge forwards inbound
+    public TCP connections back through the tunnel to the agent, which pipes
+    them to a local target service. Byte-level piping makes WebSocket, HTTP/1.1,
+    HTTP/2 and SSE work transparently.
+
+  entities:
+    - id: edge
+      name: Edge (Server 2)
+      kind: process
+      package: internal/edge
+      entrypoint: cmd/edge
+      responsibilities:
+        - Accept the agent's authenticated websocket (control plane).
+        - Wrap it as a yamux server session (single-agent model; newest wins).
+        - Listen on a public TCP port (public plane).
+        - For each public connection, open a yamux stream and pipe bytes.
+      config:
+        control_addr: ":7000"      # websocket /tunnel endpoint
+        public_addr: ":8080"       # inbound public traffic
+        token: "$DEVPROXY_TOKEN"   # shared secret ("" disables auth)
+        tls_cert: optional         # enables wss on the control plane
+        tls_key: optional
+
+    - id: agent
+      name: Agent (Server 1)
+      kind: process
+      package: internal/agent
+      entrypoint: cmd/agent
+      responsibilities:
+        - Dial out to the edge websocket (presenting the bearer token).
+        - Wrap it as a yamux client session.
+        - Accept streams; dial the local target; pipe bytes.
+        - Reconnect with exponential backoff (1s..30s), reset on success.
+      config:
+        edge_url: required         # ws:// or wss:// .../tunnel
+        target: required           # host:port of local service
+        token: "$DEVPROXY_TOKEN"
+        insecure: false            # skip TLS verify (self-signed, dev only)
+
+    - id: transport
+      name: Transport layer
+      kind: module
+      package: internal/transport
+      responsibilities:
+        - Define the Dialer interface (pluggable "connection styles").
+        - websocket implementation - WSDialer (agent), WSListener (edge).
+        - Bearer-token auth - constant-time compare; 401 on mismatch.
+        - Adapt websocket <-> net.Conn (coder/websocket NetConn).
+      extensibility: >
+        Only websocket exists today. The Dialer interface is the seam for
+        future transports (raw TCP, gRPC, QUIC).
+
+    - id: tunnel
+      name: Tunnel layer
+      kind: module
+      package: internal/tunnel
+      responsibilities:
+        - Wrap a net.Conn as a yamux session (Client for agent, Server for edge).
+        - Enable yamux keepalive for dead-peer detection.
+        - Pipe(a, b) - bidirectional io.Copy; close both on either EOF/error.
+
+    - id: target
+      name: Container service
+      kind: external
+      responsibilities:
+        - The actual app being exposed (HTTP/SSE/WebSocket server).
+      notes: Holds the TLS cert if HTTPS is terminated here (pass-through).
+
+  relationships:
+    - from: agent
+      to: edge
+      via: websocket (ws/wss)
+      direction: outbound (agent initiates)
+      carries: yamux-multiplexed streams
+    - from: edge
+      to: agent
+      via: yamux stream
+      trigger: per inbound public connection (edge calls session.Open)
+    - from: agent
+      to: target
+      via: TCP
+      trigger: per accepted yamux stream (agent dials target)
+
+  data_flow:
+    request_path:
+      - public client opens TCP to edge public_addr
+      - edge.servePublicConn grabs current session, session.Open() -> stream
+      - tunnel.Pipe(publicConn, stream)
+      - agent.serveStream accepts stream, net.Dial target
+      - tunnel.Pipe(stream, targetConn)
+      - bytes flow both ways until either side closes
+    control_path:
+      - agent.connectAndServe -> transport.WSDialer.Dial (token header)
+      - edge WSListener authenticates -> websocket.Accept -> handleAgentConn
+      - both wrap conn in yamux; agent Accepts streams, edge Opens streams
+
+  decisions:
+    - id: l4-not-l7
+      decision: Transparent L4 byte-stream tunnel (no HTTP parsing at edge).
+      rationale: >
+        ws/http1/http2/SSE are all TCP byte streams, so they work for free with
+        minimal code. Trade-off - no hostname routing or request inspection.
+    - id: yamux-mux
+      decision: yamux multiplexing over a single websocket.
+      rationale: Many concurrent connections share one control conn; keepalive.
+    - id: token-auth
+      decision: Shared-secret bearer token, constant-time compared.
+      rationale: Prevents arbitrary agents from registering a tunnel.
+    - id: tls-passthrough
+      decision: Public plane is L4; HTTPS terminates at the container service.
+      rationale: Avoids edge cert management in v1; control plane can use wss.
+    - id: single-agent
+      decision: One agent/one target per edge; newest connection wins.
+      rationale: Simplest topology for v1.
+    - id: defer-http3
+      decision: No HTTP/3 (QUIC/UDP) in v1.
+      rationale: UDP needs a separate datagram tunnel; clients fall back to h2.
+
+  out_of_scope:
+    - HTTP/3 / QUIC (UDP datagram tunnel path)
+    - L7 routing (hostname/path), request inspection dashboard
+    - Multiple tunnels/agents behind one edge
+    - ACME / terminating-TLS edge; half-close stream optimization
+
+  dependencies:
+    - github.com/coder/websocket   # websocket + NetConn adapter
+    - github.com/hashicorp/yamux   # stream multiplexer
+
+  known_issues:
+    - id: macos-port-7000
+      note: >
+        macOS AirPlay Receiver listens on *:7000 (and 5000) and returns 403.
+        Use a different --control-addr on macOS (e.g. :17000).

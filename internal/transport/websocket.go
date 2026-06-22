@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,6 +23,8 @@ type WSDialer struct {
 	URL string
 	// Token is the shared secret presented to the edge.
 	Token string
+	// Insecure skips TLS certificate verification (wss with self-signed certs).
+	Insecure bool
 }
 
 // Dial opens an authenticated websocket to the edge. The returned net.Conn is
@@ -30,6 +33,13 @@ func (d *WSDialer) Dial(ctx context.Context) (net.Conn, error) {
 	opts := &websocket.DialOptions{HTTPHeader: http.Header{}}
 	if d.Token != "" {
 		opts.HTTPHeader.Set(authHeader, bearer(d.Token))
+	}
+	if d.Insecure {
+		opts.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
 	}
 
 	c, _, err := websocket.Dial(ctx, d.URL, opts)
